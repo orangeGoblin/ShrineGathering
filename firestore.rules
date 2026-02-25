@@ -1,0 +1,37 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    match /users/{userId} {
+      allow create: if isOwner(userId);
+      allow read, update, delete: if isOwner(userId);
+    }
+
+    match /posts/{postId} {
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.visibility in ["public", "private"]
+        && request.resource.data.createdAt is timestamp;
+
+      allow read: if resource.data.visibility == "public"
+        || isOwner(resource.data.userId);
+
+      allow update, delete: if isOwner(resource.data.userId);
+    }
+
+    match /shrines/{shrineId} {
+      allow read: if true;
+      // MVP: まずは認証ユーザーが作成/更新できるようにする（後で権限や検証を強化推奨）
+      allow create, update: if isSignedIn();
+      allow delete: if false;
+    }
+  }
+}
+

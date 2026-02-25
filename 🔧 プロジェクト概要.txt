@@ -1,0 +1,158 @@
+🔧 プロジェクト概要
+アプリ名（仮）
+
+ShrinePost
+
+目的
+
+神社参拝投稿をSNSへ同時投稿し、
+神社データベースをユーザー投稿で育成する。
+
+🧱 技術スタック
+
+Frontend: Flutter
+Backend: Firebase
+Auth: Firebase Authentication（OAuth）
+Database: Firestore
+Storage: Firebase Storage
+Cloud Functions: Node.js
+AI: OpenAI API（テキスト推察のみ）
+
+🔐 認証仕様
+
+Firebase Authを使用
+
+XまたはInstagramのOAuthログイン必須
+
+ログイン後にinternal_user_idを生成
+
+複数SNS連携可能な構造
+
+🗄 Firestore データ構造
+users
+users/{userId}
+  displayName
+  createdAt
+  connectedAccounts:
+    x: { id, token }
+    instagram: { id, token }
+
+shrines
+shrines/{shrineId}
+  name
+  prefecture
+  lat
+  lng
+  goshuin_confidence (0-1)
+  createdAt
+  updatedAt
+posts
+posts/{postId}
+  userId
+  shrineId
+  text
+  photoUrls[]
+  visibility ("public" | "private")
+  metadata:
+    goshuin: boolean
+  createdAt
+☁ Cloud Functions 必須機能
+1. detectShrine()
+
+入力：
+
+lat/lng
+
+text
+
+処理：
+
+近隣shrines検索（半径1km）
+
+最も近い神社を返す
+
+無ければ新規作成候補返す
+
+2. generateCaptions()
+
+入力：
+
+shrineName
+
+text
+
+metadata
+
+出力：
+
+instagramCaption
+
+xCaption
+
+threadsCaption
+
+OpenAI APIを使用。
+
+3. postToSNS()
+
+各SNS APIに投稿
+
+エラーハンドリング必須
+
+📱 Flutter 画面構成
+
+LoginScreen
+
+HomeScreen（投稿画面）
+
+ShrinePage
+
+MyPage
+
+🖼 投稿画面仕様
+
+画像複数選択可
+
+EXIFからGPS取得
+
+detectShrine呼び出し
+
+神社候補表示
+
+投稿ボタン押下で
+
+Firestore保存
+
+generateCaptions呼び出し
+
+postToSNS実行
+
+🔥 MVP範囲
+
+実装必須：
+
+✅ ログイン
+✅ 投稿保存
+✅ 神社自動推定（位置ベースのみで可）
+✅ SNS1つ以上投稿成功
+✅ 神社ページ表示
+
+❌ MVPで不要
+
+ランキング
+
+コメント
+
+フォロー機能
+
+地図UI
+
+画像解析API
+
+🎯 非機能要件
+
+Firestoreルールでユーザー分離
+
+公開投稿のみShrinePage表示
+
+投稿作成はログイン必須

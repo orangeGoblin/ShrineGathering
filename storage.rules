@@ -1,0 +1,17 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // 推奨パス: uploads/{uid}/{postId}/{filename}
+    match /uploads/{uid}/{postId}/{filename} {
+      allow read, write: if isSignedIn() && request.auth.uid == uid;
+    }
+
+    // 公開画像を後で実現したい場合は、Firestore参照を使う設計に変更してください
+    // 例: match /posts/{postId}/{filename} { allow read: if firestore.get(...).data.visibility == "public"; ... }
+  }
+}
+
