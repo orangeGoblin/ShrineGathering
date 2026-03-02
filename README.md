@@ -46,10 +46,6 @@ Flutter から Firebase を使うには **FlutterFire CLI** で設定ファイ�
 dart pub global activate flutterfire_cli
 ```
 
-Windows の場合、`flutterfire` コマンドを使うには次を **PATH** に追加してください。
-
-- `%LOCALAPPDATA%\Pub\Cache\bin`
-
 2. パッケージ追加（`mobile/` で実行）
 
 ```bash
@@ -57,18 +53,24 @@ cd mobile
 flutter pub add firebase_core firebase_auth cloud_firestore firebase_storage cloud_functions
 ```
 
-Windows で `flutter pub add` / `flutter pub get` が
-`Building with plugins requires symlink support.` で止まる場合は、
-**Developer Mode（開発者モード）** を有効化してから再実行してください。
-
-```bash
-start ms-settings:developers
-```
-
 3. Firebase 設定の生成（`mobile/` で実行）
 
 ```bash
 flutterfire configure --project <YOUR_FIREBASE_PROJECT_ID>
+```
+
+4. iOS/macOS ビルドの依存解決
+
+```bash
+cd mobile
+pod repo update
+flutter pub get
+```
+
+macOS でビルドする場合、CocoaPods が必要です。インストール済みを確認してください。
+
+```bash
+brew install cocoapods
 ```
 
 ## Cloud Functions のメモ

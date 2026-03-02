@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1030876898617",
+    "project_id": "shrinepost-5b14f",
+    "storage_bucket": "shrinepost-5b14f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1030876898617:android:fe5a9c92b5ea798dca74e8",
+        "android_client_info": {
+          "package_name": "com.shrinepost.shrine_post"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA4HKmiF4LExe5mPn7SRLGL1G1hwWZOjz8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

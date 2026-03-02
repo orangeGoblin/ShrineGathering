@@ -1,17 +1,16 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:exif/exif.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'shrine_search_screen.dart';
 
 class PostScreen extends StatefulWidget {
   const PostScreen({super.key});
@@ -74,7 +73,7 @@ class _PostScreenState extends State<PostScreen> {
     });
     try {
       final bytes = await picked.readAsBytes();
-      final exif = await readExifFromBytes(bytes as Uint8List);
+      final exif = await readExifFromBytes(bytes);
 
       final lat = _extractGpsCoordinate(
         exif,
@@ -119,18 +118,57 @@ class _PostScreenState extends State<PostScreen> {
     if (valueTag == null) return null;
 
     final refTag = exif[refKey];
-    final ref = refTag?.printable.trim() ?? 'N';
+    String ref = 'N';
+    try {
+      final maybe = refTag?.printable;
+      if (maybe != null && maybe.trim().isNotEmpty) {
+        ref = maybe.trim();
+      } else if (refTag != null) {
+        // fallback: try values (IfdValues API)
+        final vals = refTag.values;
+        if (vals.length > 0) {
+          ref = vals.toList().first.toString().trim();
+        }
+      }
+    } catch (_) {}
 
-    final values = valueTag.values;
-    if (values == null || values.length < 3) return null;
+    // printable を使ってパース：例 "0deg 0' 0\""。printable が無ければ values から文字列を組み立てる
+    String printableValue = '';
+    try {
+      final pv = valueTag.printable;
+      if (pv.trim().isNotEmpty) {
+        printableValue = pv.trim();
+      } else {
+        final vals = valueTag.values;
+        if (vals.length > 0) {
+          printableValue = vals
+              .toList()
+              .map((v) => v.toString())
+              .join(' ')
+              .trim();
+        }
+      }
+    } catch (_) {
+      printableValue = '';
+    }
 
-    double toDouble(dynamic v) {
-      if (v is num) return v.toDouble();
-      final s = v.toString();
+    if (printableValue.isEmpty) return null;
+
+    final parts = printableValue
+        .replaceAll('°', ' ')
+        .replaceAll("'", ' ')
+        .replaceAll('"', ' ')
+        .split(RegExp(r'\s+'))
+        .where((s) => s.isNotEmpty)
+        .toList();
+
+    if (parts.length < 3) return null;
+
+    double toDouble(String s) {
       if (s.contains('/')) {
-        final parts = s.split('/');
-        final nume = double.tryParse(parts[0]);
-        final deno = double.tryParse(parts[1]);
+        final frac = s.split('/');
+        final nume = double.tryParse(frac[0]);
+        final deno = double.tryParse(frac[1]);
         if (nume != null && deno != null && deno != 0) {
           return nume / deno;
         }
@@ -138,15 +176,19 @@ class _PostScreenState extends State<PostScreen> {
       return double.tryParse(s) ?? 0;
     }
 
-    final deg = toDouble(values[0]);
-    final min = toDouble(values[1]);
-    final sec = toDouble(values[2]);
-    var result = deg + (min / 60.0) + (sec / 3600.0);
+    try {
+      final deg = toDouble(parts[0]);
+      final min = toDouble(parts[1]);
+      final sec = toDouble(parts[2]);
+      var result = deg + (min / 60.0) + (sec / 3600.0);
 
-    if (ref == 'S' || ref == 'W') {
-      result = -result;
+      if (ref == 'S' || ref == 'W') {
+        result = -result;
+      }
+      return result;
+    } catch (e) {
+      return null;
     }
-    return result;
   }
 
   Future<void> _getLocationFromDevice() async {
@@ -155,9 +197,7 @@ class _PostScreenState extends State<PostScreen> {
     if (!status.isGranted) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('位置情報が取得できませんでした。後で手動検索機能を追加予定です。'),
-          ),
+          const SnackBar(content: Text('位置情報が取得できませんでした。後で手動検索機能を追加予定です。')),
         );
       }
       return;
@@ -166,9 +206,9 @@ class _PostScreenState extends State<PostScreen> {
     final serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('位置情報サービスを有効にしてください。')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('位置情報サービスを有効にしてください。')));
       }
       return;
     }
@@ -191,8 +231,7 @@ class _PostScreenState extends State<PostScreen> {
     });
 
     try {
-      final callable =
-          FirebaseFunctions.instance.httpsCallable('detectShrine');
+      final callable = FirebaseFunctions.instance.httpsCallable('detectShrine');
       final result = await callable.call<Map<String, dynamic>>({
         'lat': _latitude,
         'lng': _longitude,
@@ -207,18 +246,16 @@ class _PostScreenState extends State<PostScreen> {
 
       if (_shrineId == null) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('近くに神社候補が見つかりませんでした。'),
-            ),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('近くに神社候補が見つかりませんでした。')));
         }
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('神社自動特定に失敗しました: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('神社自動特定に失敗しました: $e')));
       }
     } finally {
       if (mounted) {
@@ -234,9 +271,9 @@ class _PostScreenState extends State<PostScreen> {
 
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('ログインが必要です。')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('ログインが必要です。')));
       return;
     }
 
@@ -250,9 +287,9 @@ class _PostScreenState extends State<PostScreen> {
       final postId = docRef.id;
 
       // Storage へアップロード
-      final storageRef = FirebaseStorage.instance
-          .ref()
-          .child('posts/${user.uid}/$postId.jpg');
+      final storageRef = FirebaseStorage.instance.ref().child(
+        'posts/${user.uid}/$postId.jpg',
+      );
       await storageRef.putFile(_imageFile!);
       final imageUrl = await storageRef.getDownloadURL();
 
@@ -268,16 +305,16 @@ class _PostScreenState extends State<PostScreen> {
       });
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('投稿しました。')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('投稿しました。')));
         Navigator.of(context).maybePop();
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('投稿に失敗しました: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('投稿に失敗しました: $e')));
       }
     } finally {
       if (mounted) {
@@ -293,9 +330,7 @@ class _PostScreenState extends State<PostScreen> {
     final canPost = _imageFile != null && !_posting;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('ShrinePost'),
-      ),
+      appBar: AppBar(title: const Text('ShrinePost')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -312,24 +347,17 @@ class _PostScreenState extends State<PostScreen> {
                     border: Border.all(color: Colors.grey.shade400),
                   ),
                   child: _imageFile == null
-                      ? const Center(
-                          child: Text('タップして写真を選択'),
-                        )
+                      ? const Center(child: Text('タップして写真を選択'))
                       : ClipRRect(
                           borderRadius: BorderRadius.circular(12),
-                          child: Image.file(
-                            _imageFile!,
-                            fit: BoxFit.cover,
-                          ),
+                          child: Image.file(_imageFile!, fit: BoxFit.cover),
                         ),
                 ),
               ),
             ),
             const SizedBox(height: 12),
-            if (_loadingLocation)
-              const Text('位置情報を取得中...'),
-            if (_loadingShrine)
-              const Text('近くの神社を検索中...'),
+            if (_loadingLocation) const Text('位置情報を取得中...'),
+            if (_loadingShrine) const Text('近くの神社を検索中...'),
             const SizedBox(height: 12),
             _buildShrineCard(),
             const SizedBox(height: 16),
@@ -390,9 +418,7 @@ class _PostScreenState extends State<PostScreen> {
           title: const Text('神社候補'),
           subtitle: const Text('写真または位置情報から自動推定します'),
           trailing: TextButton(
-            onPressed: () {
-              // 後で実装するためダミー
-            },
+            onPressed: _openShrineSearch,
             child: const Text('別の神社を探す'),
           ),
         ),
@@ -406,13 +432,26 @@ class _PostScreenState extends State<PostScreen> {
             ? Text('約 ${_shrineDistance}m 先')
             : null,
         trailing: TextButton(
-          onPressed: () {
-            // 後で実装するためダミー
-          },
+          onPressed: _openShrineSearch,
           child: const Text('別の神社を探す'),
         ),
       ),
     );
   }
-}
 
+  Future<void> _openShrineSearch() async {
+    final result = await Navigator.of(context).push<Map<String, dynamic>?>(
+      MaterialPageRoute(
+        builder: (_) =>
+            ShrineSearchScreen(currentLat: _latitude, currentLng: _longitude),
+      ),
+    );
+    if (result != null && mounted) {
+      setState(() {
+        _shrineId = result['id'] as String?;
+        _shrineName = result['name'] as String?;
+        _shrineDistance = result['distance'] as int?;
+      });
+    }
+  }
+}
